@@ -114,6 +114,10 @@ int main(int argc, char **argv) {
 		return 0;
 	}
 	
+	int enable = 1;
+	if(setsockopt(hServerSocket,SOL_SOCKET,SO_REUSEADDR,&enable,sizeof(int)) < 0)
+		printf("setsockopt(SO_REUSEADDR) failed.\n");
+	
 	Address.sin_family=AF_INET;
 	Address.sin_addr.s_addr=INADDR_ANY;
 	Address.sin_port=htons(portno);
