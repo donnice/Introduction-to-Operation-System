@@ -76,19 +76,19 @@ int main(int argc, char **argv) {
 
     /* Socket Code Here */
 	int hSocket;				// client socket
-	ssize_t len;
+//	ssize_t len;
 	struct hostent* pHostInfo;
 	struct sockaddr_in Address;	// remote_addr
-	int fileSize;				// file_size
+//	int fileSize;				// file_size
 	FILE *received_file;
-	int remain_data = 0;
+//	int remain_data = 0;
 	long nHostAddress;
 	char pBuffer[BUFSIZE];
 
 	/* get IP address from name */
 	pHostInfo=gethostbyname(hostname);
 	/* copy address into long*/
-	memcpy(&nHostAdress,pHostInfo->h_addr,pHostInfo->h_length);
+	memcpy(&nHostAddress,pHostInfo->h_addr,pHostInfo->h_length);
 
 	/* Construct remote_addr struct */
 	Address.sin_family = AF_INET;
@@ -99,30 +99,66 @@ int main(int argc, char **argv) {
 	hSocket=socket(AF_INET,SOCK_STREAM,0);
 	if(hSocket < 0)
 	{
-		fprintf("Error creating socket!\n");
+		printf("Error creating socket!\n");
 		return 0;
 	}
 
 	/* connect to host*/
 	if(connect(hSocket,(struct sockaddr*)&Address,sizeof(Address)) < 0 )
 	{
-		fprintf("Error on connect!\n");
+		printf("Error on connect!\n");
 		return 0;
 	}
 
 	/* Receiving file size */
+
+	printf("[Client] Receiving the file from server....\n");
+	received_file = fopen(filename,"a");
+	if(received_file == NULL)
+		printf("File cannot be opened!\n");
+	else
+	{
+		int fr_block_sz = 0;
+		while((fr_block_sz = recv(hSocket,pBuffer,BUFSIZE,0)) >= 0)
+		{
+			if(fr_block_sz == 0)
+				break;
+			int write_sz = fwrite(pBuffer,sizeof(char),fr_block_sz,received_file);
+			if(write_sz < fr_block_sz)
+			{
+				printf("File write failed.\n");
+				return 0;
+			}
+		}
+	}
+
+
+	/*
 	recv(hSocket,pBuffer,BUFSIZE,0);
-	file_size=atoi(pBuffer);
+	fileSize=atoi(pBuffer);
 
 	received_file=fopen(filename,"w");
 	if(received_file == NULL)
 	{
-		fprintf("Fail to open file too!\n");
+		printf("Fail to open file too!\n");
 		return 0;
 	}
 	
-	remain_data = file_size;
+	remain_data = fileSize;
 	
-	/* keep read*/
-	while(((
+	
+	while(((len = recv(hSocket,pBuffer,BUFSIZE,0)) > 0) && (remain_data > 0))
+	{
+		fwrite(pBuffer,len,sizeof(pBuffer),received_file);
+		// pointer to array to be written
+		// size in bytes of each elem to be written
+		// num of elements
+		// pointer to a file
+		remain_data -= len;
+		//printf("Received %d bytes and we hope :- %d bytes\n",len,remain_data);
+	}*/
+	fclose(received_file);
+	close(hSocket);
+
+	return 0;
 }

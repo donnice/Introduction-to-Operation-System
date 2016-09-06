@@ -100,16 +100,12 @@ int main(int argc, char **argv) {
     /* Socket Code Here */
 	int hServerSocket;		// server socket
 	int hSocket;			// peer socket
-	socklen_t sock_len;
-	ssize_t len;
+	char pBuffer[BUFSIZE];
 	struct sockaddr_in Address;	// server_addr
-	struct sockaddr_in peer_Address;	// peer_addr
-	int fd;						// file open
-	char file_size[BUFSIZE];
-	int sent_bytes = 0;
-	struct stat file_stat;
-	int offset;
-	int remain_data;
+	FILE *fd;						// file open
+//	int sent_bytes = 0;
+//	struct stat file_stat;
+//	int remain_data;
 
 	/* Create server socket */
 	hServerSocket = socket(AF_INET,SOCK_STREAM,0);
@@ -141,21 +137,21 @@ int main(int argc, char **argv) {
 		return 0;
 	}
 	
-	fd = open(filename, O_RDONLY);
-	if(fd < 0)
+	fd = fopen(filename, "r");
+	if(fd == NULL)
 	{
 		printf("Error opening file!\n");
 		return 0;
 	}
 
-	int nAddressSize = sizeof(struct sockaddr_in);
-	/* Get file stats */
+	/* Get file stats 
 	if(fstat(fd, &file_stat) < 0)
 	{
 		printf("Error fstat!\n");
 		return 0;
-	}
+	}*/
 
+	int nAddressSize=sizeof(struct sockaddr_in);
 
 	/* Accepting incoming peers */
 	hSocket = accept(hServerSocket,(struct sockaddr*)&Address,
@@ -167,18 +163,27 @@ int main(int argc, char **argv) {
 		return 0;
 	}
 	printf("Accept peer => %s\n", inet_ntoa(Address.sin_addr));
-	
-	offset = 0;
-	remain_data = file_stat.st_size;
 
-	while(((sent_bytes = sendfile(hSocket,fd,&offset,BUFSIZE)) > 0)
+//	remain_data = file_stat.st_size;
+
+	/*	while(((sent_bytes = sendfile(hSocket,fd, NULL ,BUFSIZE)) > 0)
 		 && (remain_data > 0))
 	{
-		printf("1. Server sent %d bytes from file's data, offset is now : %d and remaining data = %d\n", sent_bytes, offset, remain_data);
+		printf("1. Server sent %d bytes from file's data and remaining data = %d\n", sent_bytes,remain_data);
 		remain_data -= sent_bytes;
-		printf(stdout, "2. Server sent %d bytes from file's data, offset is now : %d and remaining data = %d\n", sent_bytes, offset, remain_data);
+		printf("2. Server sent %d bytes from file's data and remaining data = %d\n", sent_bytes, remain_data);
+	}*/
+	int fs_block_sz=0;
+	while((fs_block_sz=fread(pBuffer,sizeof(char),BUFSIZE,fd)) > 0)
+	{
+		if(send(hServerSocket,pBuffer,fs_block_sz,0) < 0)
+		{
+			printf("Error:Failed to send file!\n");
+			exit(1);
+		}
 	}
-
+	
+	printf("\nClosing the socket");
 	close(hSocket);
 	close(hServerSocket);
 
