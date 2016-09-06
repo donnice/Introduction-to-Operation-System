@@ -9,8 +9,6 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
-#include <sys/stat.h>
-#include <sys/sendfile.h>
 
 #if 0
 /*
@@ -109,11 +107,15 @@ int main(int argc, char **argv) {
 
 	/* Create server socket */
 	hServerSocket = socket(AF_INET,SOCK_STREAM,0);
-	if(hServerSocket == -1)
+	if(hServerSocket < 0)
 	{
 		printf("Error creating socket!");
 		return 0;
 	}
+	
+	int enable = 1;
+	if (setsockopt(hServerSocket, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
+	    printf("setsockopt(SO_REUSEADDR) failed.\n");
 
 	Address.sin_family = AF_INET;
 	Address.sin_addr.s_addr = INADDR_ANY;
@@ -173,19 +175,28 @@ int main(int argc, char **argv) {
 		remain_data -= sent_bytes;
 		printf("2. Server sent %d bytes from file's data and remaining data = %d\n", sent_bytes, remain_data);
 	}*/
-	int fs_block_sz=0;
-	while((fs_block_sz=fread(pBuffer,sizeof(char),BUFSIZE,fd)) > 0)
+	/* Send file to client */
+	for(;;)
 	{
-		if(send(hServerSocket,pBuffer,fs_block_sz,0) < 0)
-		{
-			printf("Error:Failed to send file!\n");
-			exit(1);
-		}
-	}
-	
-	printf("\nClosing the socket");
-	close(hSocket);
-	close(hServerSocket);
+		printf("Sending file to client ...\n");
 
+		int fs_block_sz;
+		while((fs_block_sz=fread(pBuffer,sizeof(char),BUFSIZE,fd)) > 0)
+		{
+			if(send(hSocket,pBuffer,fs_block_sz,0) < 0)
+			{
+				printf("Error:Failed to send file!\n");
+				return 0;
+			}
+
+		}
+	
+		//printf("\nClosing the socket");
+		if(close(hSocket) < 0)
+		{
+			printf("Could not close socket!\n");
+		}
+		close(hServerSocket);
+	}
 	return 0;
 }

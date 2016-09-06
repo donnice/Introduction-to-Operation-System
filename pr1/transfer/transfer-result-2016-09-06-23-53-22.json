@@ -1,0 +1,44 @@
+{
+    "tests": [
+        {
+            "output": {
+                "client_returncode": 1,
+                "server_console": "setsockopt(SO_REUSEADDR) failed.\n\nBinding to port 8544\nCould not connect to the host!\n",
+                "passfail": "failed",
+                "server_returncode": 0,
+                "client_console": "ERROR connecting: Connection refused\n"
+            },
+            "traceback": "Traceback (most recent call last):\n  File \"/home/vmuser_ulhcxray/gios.py\", line 246, in func_wrapper\n    ans = func(self)\n  File \"run.py\", line 78, in test_server\n    self.converse(['./transferserver', '-p', self.port, '-f', 'file.txt'], ['./bvttransferclient', '-p', self.port, '-s', 'localhost', '-o', 'udacious.txt'])\n  File \"/home/vmuser_ulhcxray/gios.py\", line 183, in converse\n    self.assertIsNone(self.p_server.poll(), \"The server process seems to have crashed.\")\nAssertionError: The server process seems to have crashed.\n",
+            "description": "Tests that the server accurately sends the file to the client."
+        },
+        {
+            "output": {
+                "client_returncode": 0,
+                "passfail": "passed",
+                "client_console": "gcc -o transferclient -Wall -Werror --std=gnu99 -g3 -fsanitize=address -fno-omit-frame-pointer -Wno-format-security transferclient.c -lpthread -static-libasan\n"
+            },
+            "traceback": "",
+            "description": "Tests that the client compiles"
+        },
+        {
+            "output": {
+                "server_console": "make: Warning: File 'transferserver.c' has modification time 1.7 s in the future\ngcc -o transferserver -Wall -Werror --std=gnu99 -g3 -fsanitize=address -fno-omit-frame-pointer -Wno-format-security transferserver.c -lpthread -static-libasan\nmake: warning:  Clock skew detected.  Your build may be incomplete.\n",
+                "passfail": "passed",
+                "server_returncode": 0
+            },
+            "traceback": "",
+            "description": "Tests that the server compiles"
+        },
+        {
+            "output": {
+                "client_returncode": 0,
+                "server_console": "",
+                "passfail": "passed",
+                "server_returncode": null,
+                "client_console": "[Client] Receiving the file from server....\n"
+            },
+            "traceback": "",
+            "description": "Tests that the client accurately saves the file sent from the server."
+        }
+    ]
+}
