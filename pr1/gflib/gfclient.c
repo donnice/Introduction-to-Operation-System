@@ -10,6 +10,21 @@
 
 #include "gfclient.h"
 
+#define BUFSIZE 4096
+#define HEADER_LEN 512
+
+const char * const scheme = "GETFILE";
+const char * const method = "GET";
+const char * const end_marker = "\\r\\n\\r\\n";
+
+struct gfcrequest_t
+{
+	int filelen;
+	char clientPort[12];
+	char servIP[50];
+	gfstatus_t ret_status;
+
+};
 
 void gfc_cleanup(gfcrequest_t *gfr){
 
