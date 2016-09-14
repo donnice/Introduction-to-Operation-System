@@ -8,7 +8,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <stdio.h>
-
+#include <arpa/inet.h>
 #include "gfclient.h"
 
 #define BUFSIZE 4096

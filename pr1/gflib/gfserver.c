@@ -1,5 +1,16 @@
 #include <unistd.h>
 #include "gfserver.h"
+#include <stdlib.h>
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <string.h>
+#include <pthread.h>
+#include <netdb.h>
+#include <ctype.h>
+#include <errno.h>
+#include <arpa/inet.h>
 
 /* 
  * Modify this file to implement the interface specified in
@@ -21,11 +32,22 @@ struct gfserver_t
 };
 
 static gfserver_t *gfserv;
-static gfcontext_t *gfcontent;
+static gfcontext_t *gfcontext;
+
+void *get_in_addr(struct sockaddr *sa)
+{
+
+    if (sa->sa_family == AF_INET)
+	{
+	    return &(((struct sockaddr_in*)sa)->sin_addr);
+	 }
+
+    return &(((struct sockaddr_in6*)sa)->sin6_addr);
+}
 
 void gfs_abort(gfcontext_t *ctx){
-	close(ctx->clntSock);
-	close(ctx->sockfd);
+	close(ctx->hSocket);
+	close(ctx->hServerSocket);
 	free(gfserv);
 
 	perror("aborting...\n");
@@ -48,14 +70,29 @@ ssize_t gfs_send(gfcontext_t *ctx, void *data, size_t len){
 	size_t n;
 
 	int debug_tries = 1;
-	n = send(ctx->clntSock
+	while(total < len)
+	{
+		n = send(ctx->hSocket, data+total,bytesRemain,0);
+		if(n < 0)
+		{
+			printf("Nothing to send...\n");
+			break;
+		}
+
+		printf("Tries:%d Bytes sent:%zu\n",debug_tries++,n);
+
+		total += n;
+		bytesRemain -= n;
+	}
+
+	return total;
 }
 
 ssize_t gfs_sendheader(gfcontext_t *ctx, gfstatus_t status, size_t file_len){
     char resp_header[MAX_REQUEST_LEN];
 	char end_mark[12] = "\\r\\n\\r\\n";
 
-	sprintf(resp_header,"GETFILE%d%z%ds",status,file_len,end_mark);
+	sprintf(resp_header,"GETFILE%d%zd%s",status,file_len,end_mark);
 
 	printf("Response from header:%s\n",resp_header);
 
@@ -74,8 +111,10 @@ void gfserver_serve(gfserver_t *gfs){
 	int rv;
 
 	int recvMsg = 0;
-	char *req_path;
+	char recvBuff[MAX_REQUEST_LEN];
 
+	memset(&hints, 0, sizeof(hints));
+	
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_flags = AI_PASSIVE;
@@ -83,12 +122,12 @@ void gfserver_serve(gfserver_t *gfs){
 	if((rv = getaddrinfo(NULL,gfs->port,&hints, &servinfo))!=0)
 	{
 		printf("Error in getaddrinfo 83\n");
-		return 1;
+		exit(1);
 	}
 
 	for(p= servinfo; p!=NULL;p=p->ai_next)
 	{
-		if((gfccontext->hServerSocket = socket(p->ai_family,p->ai_socktype, p->ai_protocol)) < 0)
+		if((gfcontext->hServerSocket = socket(p->ai_family,p->ai_socktype, p->ai_protocol)) < 0)
 		{
 			printf("server:socket\n");
 			continue;
@@ -114,7 +153,7 @@ void gfserver_serve(gfserver_t *gfs){
 	if(p == NULL)
 	{
 		printf("Server:failed to bind.\n");
-		return 2;
+		exit(1);
 	}
 
 	freeaddrinfo(servinfo);
@@ -132,7 +171,27 @@ void gfserver_serve(gfserver_t *gfs){
 
 		if(gfcontext->hSocket == -1)
 		{
-			
+			printf("accept error\n");
+			continue;
+		}
+
+		inet_ntop(clntAddr.ss_family,get_in_addr((struct sockaddr*)&clntAddr),str,sizeof(str));
+
+		if(!fork())
+		{
+			if((recvMsg = recv(gfcontext->hSocket, recvBuff,MAX_REQUEST_LEN,0)) < 0)
+			{
+				printf("recv() failed\n");
+				exit(1);
+			}
+
+			if(gfs->fp_handler(gfcontext,gfs->filePath,NULL)<0)
+			{
+				printf("Some problem here...\n");
+			}
+
+			if(shutdown(gfcontext->hSocket, SHUT_WR) == -1)
+				printf("socket shutdown failed\n");
 		}
 	}
 }
@@ -150,7 +209,7 @@ void gfserver_set_maxpending(gfserver_t *gfs, int max_npending){
 }
 
 void gfserver_set_port(gfserver_t *gfs, unsigned short port){
-	gfr->port = port;	
+	snprintf(gfs->port,12, "%u",port);	
 }
 
 
