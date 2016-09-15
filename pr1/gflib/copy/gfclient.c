@@ -14,7 +14,6 @@
 #define BUFSIZE 4096
 #define HEADER_LEN 512
 
-
 const char * const scheme = "GETFILE";
 const char * const method = "GET";
 const char * const end_marker = "\\r\\n\\r\\n";

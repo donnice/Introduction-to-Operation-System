@@ -31,8 +31,6 @@ struct gfserver_t
 	int *handler_arg;
 };
 
-
-
 static gfserver_t *gfserv;
 static gfcontext_t *gfcontext;
 
