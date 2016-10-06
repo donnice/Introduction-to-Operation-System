@@ -1,217 +1,202 @@
-#include <unistd.h>
-#include "gfserver.h"
 #include <stdlib.h>
 #include <stdio.h>
-#include <sys/types.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <errno.h>
+#include <netinet/in.h>
+#include <string.h>
+#include <ctype.h>
 #include <sys/socket.h>
 #include <netdb.h>
-#include <string.h>
-#include <pthread.h>
-#include <netdb.h>
-#include <ctype.h>
-#include <errno.h>
+#include <fcntl.h>
 #include <arpa/inet.h>
 
-/* 
+#include "gfserver.h"
+
+/*
  * Modify this file to implement the interface specified in
  * gfserver.h.
  */
-struct gfcontext_t
-{
-	int hServerSocket;
-	int hSocket;
+
+#define BUFSIZE 4096
+
+
+struct gfcontext_t {
+    //listen socket file discriptor
+    int socklsn;
+    //connection socket file discriptor
+    int sockconn;
+    //file path
+    char* filepath;
+}; 
+
+struct gfserver_t {
+	//socket connect arguments
+
+	//port number
+    unsigned short port;
+    //max number of pending methods
+    int max_npending;
+
+    //arguments
+    gfcontext_t *ctx;
+    char *path;
+    void *handlearg;
+
+    //callback function
+    ssize_t (*handler)(gfcontext_t *ctx, char *path, void *handlearg);
 };
 
-struct gfserver_t
+
+void error(char* mge)
 {
-	char port[12];
-	unsigned short max_npending;
-	char filePath[256];
-	ssize_t(*fp_handler)(gfcontext_t *ctx, char *, void*);
-	int *handler_arg;
-};
-
-
-
-static gfserver_t *gfserv;
-static gfcontext_t *gfcontext;
-
-void *get_in_addr(struct sockaddr *sa)
-{
-
-    if (sa->sa_family == AF_INET)
-	{
-	    return &(((struct sockaddr_in*)sa)->sin_addr);
-	 }
-
-    return &(((struct sockaddr_in6*)sa)->sin6_addr);
+	fprintf(stderr, "%s\n", mge);
+	exit(-1);
 }
 
-void gfs_abort(gfcontext_t *ctx){
-	close(ctx->hSocket);
-	close(ctx->hServerSocket);
-	free(gfserv);
-
-	perror("aborting...\n");
-
-	exit(1);
-}
-
-gfserver_t* gfserver_create(){
-//    return (gfserver_t *)NULL;
-	gfserv = (gfserver_t*)malloc(1*sizeof(gfserver_t));
-	gfcontext = (gfcontext_t*)malloc(1*sizeof(gfcontext_t));
-
-	return gfserv;
-}
-
-ssize_t gfs_send(gfcontext_t *ctx, void *data, size_t len){
-    
-	size_t total = 0;
-	size_t bytesRemain = len;
-	size_t n;
-
-	int debug_tries = 1;
-	while(total < len)
-	{
-		n = send(ctx->hSocket, data+total,bytesRemain,0);
-		if(n < 0)
-		{
-			printf("Nothing to send...\n");
-			break;
-		}
-
-		printf("Tries:%d Bytes sent:%zu\n",debug_tries++,n);
-
-		total += n;
-		bytesRemain -= n;
-	}
-
-	return total;
+void print(char* mge) {
+    fprintf(stdout, "%s.\n", mge);
+    fflush(stdout); 
 }
 
 ssize_t gfs_sendheader(gfcontext_t *ctx, gfstatus_t status, size_t file_len){
-    char resp_header[MAX_REQUEST_LEN];
-	char end_mark[12] = "\\r\\n\\r\\n";
+    
+    print("1. sending response header");
+    
+    if (status == GF_FILE_NOT_FOUND) {
+    	print("GETFILE FILE_NOT_FOUND \r\n\r\n");
+        int size = write(ctx->sockconn, "GETFILE FILE_NOT_FOUND \r\n\r\n", strlen("GETFILE FILE_NOT_FOUND \r\n\r\n") + 1);
+        gfs_abort(ctx);
+        return size;
+    }
 
-	sprintf(resp_header,"GETFILE%d%zd%s",status,file_len,end_mark);
-
-	printf("Response from header:%s\n",resp_header);
-
-	if(send(ctx->hSocket,resp_header,MAX_REQUEST_LEN,0)!=MAX_REQUEST_LEN)
-		printf("Send failed.\n");
-	
-	return 0;
+    if (status == GF_ERROR) {
+    	print("GETFILE ERROR \r\n\r\n");
+        int size = write(ctx->sockconn, "GETFILE ERROR \r\n\r\n", strlen("GETFILE ERROR \r\n\r\n") + 1);
+        gfs_abort(ctx);
+        return size;
+    }
+    
+    char header[256];
+    bzero(header, 256);
+    sprintf(header, "GETFILE OK %zu \r\n\r\n", file_len);
+    print(header);
+    
+    return write(ctx->sockconn, header, strlen(header));
 }
 
-void gfserver_serve(gfserver_t *gfs){
-	struct addrinfo hints, *servinfo, *p;
-	struct sockaddr_storage clntAddr;
-	socklen_t clntSize;
-	int yes = 1;
-	char str[INET6_ADDRSTRLEN];
-	int rv;
+ssize_t gfs_send(gfcontext_t *ctx, void *data, size_t len){
 
-	int recvMsg = 0;
-	char recvBuff[MAX_REQUEST_LEN];
-
-	memset(&hints, 0, sizeof(hints));
-	
-	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_flags = AI_PASSIVE;
-
-	if((rv = getaddrinfo(NULL,gfs->port,&hints, &servinfo))!=0)
-	{
-		printf("Error in getaddrinfo 83\n");
-		exit(1);
-	}
-
-	for(p= servinfo; p!=NULL;p=p->ai_next)
-	{
-		if((gfcontext->hServerSocket = socket(p->ai_family,p->ai_socktype, p->ai_protocol)) < 0)
-		{
-			printf("server:socket\n");
-			continue;
-		}
-
-		// get rid of 'address already in use'
-		if(setsockopt(gfcontext->hServerSocket, SOL_SOCKET, SO_REUSEADDR,&yes, sizeof(int)) < 0)
-		{
-			printf("setsockopt");
-			exit(1);
-		}
-
-		if(bind(gfcontext->hServerSocket,p->ai_addr, p->ai_addrlen) < 0)
-		{
-			close(gfcontext->hServerSocket);
-			printf("server:bind\n");
-			continue;
-		}
-
-		break;
-	}
-
-	if(p == NULL)
-	{
-		printf("Server:failed to bind.\n");
-		exit(1);
-	}
-
-	freeaddrinfo(servinfo);
-
-	if(listen(gfcontext->hServerSocket, gfs->max_npending) == -1)
-	{
-		printf("listen\n");
-		exit(1);
-	}
-
-	while(1)
-	{
-		clntSize = sizeof(clntAddr);
-		gfcontext->hSocket = accept(gfcontext->hServerSocket,(struct sockaddr*)&clntAddr, &clntSize);
-
-		if(gfcontext->hSocket == -1)
-		{
-			printf("accept error\n");
-			continue;
-		}
-
-		inet_ntop(clntAddr.ss_family,get_in_addr((struct sockaddr*)&clntAddr),str,sizeof(str));
-
-		if(!fork())
-		{
-			if((recvMsg = recv(gfcontext->hSocket, recvBuff,MAX_REQUEST_LEN,0)) < 0)
-			{
-				printf("recv() failed\n");
-				exit(1);
-			}
-
-			if(gfs->fp_handler(gfcontext,gfs->filePath,NULL)<0)
-			{
-				printf("Some problem here...\n");
-			}
-
-			if(shutdown(gfcontext->hSocket, SHUT_WR) == -1)
-				printf("socket shutdown failed\n");
-		}
-	}
+    return write(ctx->sockconn, data, len);;
 }
 
-void gfserver_set_handlerarg(gfserver_t *gfs, void* arg){
-	gfs->handler_arg = (int *)arg;
+void gfs_abort(gfcontext_t *ctx){
+    close(ctx->sockconn);
 }
 
-void gfserver_set_handler(gfserver_t *gfs, ssize_t (*handler)(gfcontext_t *, char *, void*)){
-	gfs->fp_handler = handler;
-}
-
-void gfserver_set_maxpending(gfserver_t *gfs, int max_npending){
-	gfs->max_npending = max_npending;
+gfserver_t* gfserver_create(){
+    struct gfserver_t *gfs = (struct gfserver_t*)malloc(sizeof(struct gfserver_t));
+    gfs->ctx = NULL;
+    gfs->path = NULL;
+    gfs->handlearg = NULL;
+    return gfs;
 }
 
 void gfserver_set_port(gfserver_t *gfs, unsigned short port){
-	snprintf(gfs->port,12, "%u",port);	
+    gfs->port = port;
+}
+void gfserver_set_maxpending(gfserver_t *gfs, int max_npending){
+    gfs->max_npending = max_npending;
+}
+
+void gfserver_set_handler(gfserver_t *gfs, ssize_t (*handler)(gfcontext_t *, char *, void*)){
+    gfs->handler = handler;
+}
+
+void gfserver_set_handlerarg(gfserver_t *gfs, void* arg){
+    gfs->handlearg = arg;
 }
 
 
+void sockInitServer(gfserver_t *gfs, int* socklsn, struct sockaddr_in* serveraddr)
+{
+    /* socket: create the socket */
+   
+    *socklsn = socket(AF_INET, SOCK_STREAM, 0);
+    if (*socklsn < 0) {
+		error("ERROR opening socket\n");        
+    }
+	
+
+  
+  	int option_char = 1;
+  	setsockopt(*socklsn, SOL_SOCKET, SO_REUSEADDR, 
+       (const void *)&option_char, sizeof(int));
+
+	/* build the server's Internet address */
+    bzero((char *) serveraddr, sizeof(struct sockaddr_in));
+
+	serveraddr->sin_family = AF_INET;
+	serveraddr->sin_addr.s_addr = htonl(INADDR_ANY);
+	serveraddr->sin_port = htons(gfs->port);
+
+	if(bind(*socklsn, (struct sockaddr *) serveraddr, sizeof(*serveraddr))<0){
+		error("ERROR on binding");
+	}
+
+	print("socket bind completed");
+	if(listen(*socklsn, gfs->max_npending) < 0){
+		error("ERROR on listen");
+	}
+	print("socket listen completed");    
+}
+
+void gfserver_serve(gfserver_t *gfs){
+    
+    int socklsn = 0;
+    int sockconn = 0;
+
+    struct sockaddr_in serveraddr;
+    char readData[BUFSIZE];
+    bzero(readData, BUFSIZE);
+
+
+    //infinte loop: waiting 
+    sockInitServer(gfs, &socklsn, &serveraddr);
+    while(1) { 
+
+	   	/* accept: wait for a connection method */
+		sockconn = accept(socklsn, (struct sockaddr *) NULL, NULL);
+		if (sockconn < 0) {
+	      error("ERROR on accept");
+		}
+		print("socket connected successed");
+		
+
+        recv(sockconn, readData, BUFSIZE, 0);
+        
+        
+        char *scheme = strtok(readData, " ");
+        char *method = strtok(NULL, " ");
+        char *filenamerecvcli = strtok(NULL, " ");
+        
+        struct gfcontext_t *ctx = (struct gfcontext_t*)malloc(sizeof(struct gfcontext_t));
+        ctx->filepath = filenamerecvcli;
+        ctx->socklsn = socklsn;
+        ctx->sockconn = sockconn;
+        
+        char filename = *filenamerecvcli;
+        
+        if (scheme == NULL || method == NULL || filenamerecvcli == NULL ||
+        	strcmp(scheme, "GETFILE") != 0 || strcmp(method, "GET") != 0 
+        	|| filename != '/') {
+            char header[] = "GETFILE FILE_NOT_FOUND  \r\n\r\n";
+            write(ctx->sockconn, header, strlen(header) + 1);
+        }else {
+            gfs->handler(ctx, filenamerecvcli, gfs->handlearg);
+        }
+        
+        fprintf(stdout, "method header: %s %s %s\n", scheme, method, filenamerecvcli);
+    }
+
+}

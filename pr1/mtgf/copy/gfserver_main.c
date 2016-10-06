@@ -11,16 +11,30 @@
 
 #define USAGE                                                                 \
 "usage:\n"                                                                    \
-"  webproxy [options]\n"                                                      \
+"  gfserver_main [options]\n"                                                 \
 "options:\n"                                                                  \
-"  -p                  Listen port (Default: 8888)\n"                         \
-"  -c                  Content file mapping keys to content files\n"          \
-"  -h                  Show this help message\n"                              
+"  -h                  Show this help message.\n"                             \
+"  -c [content_file]   Content file mapping keys to content files\n"          \
+"  -p [listen_port]    Listen port (Default: 8080)\n"                         \
+"  -t [nthreads]       Number of threads (Default: 1)\n"
+
+/* OPTIONS DESCRIPTOR ====================================================== */
+static struct option gLongOptions[] = {
+  {"port",          required_argument,      NULL,           'p'},
+  {"content",       required_argument,      NULL,           'c'},
+  {"nthreads",      required_argument,      NULL,           't'},
+  {"help",          no_argument,            NULL,           'h'},
+  {NULL,            0,                      NULL,             0}
+};
+
 
 extern ssize_t handler_get(gfcontext_t *ctx, char *path, void* arg);
-extern void threads_init(int nthreads); 
-extern void threads_requeue_init();
-extern void threads_release();
+
+static void _sig_handler(int signo){
+  if (signo == SIGINT || signo == SIGTERM){
+    exit(signo);
+  }
+}
 
 /* Main ========================================================= */
 int main(int argc, char **argv) {
@@ -30,13 +44,23 @@ int main(int argc, char **argv) {
   gfserver_t *gfs;
   int nthreads = 1;
 
+  if (signal(SIGINT, _sig_handler) == SIG_ERR){
+    fprintf(stderr,"Can't catch SIGINT...exiting.\n");
+    exit(EXIT_FAILURE);
+  }
+
+  if (signal(SIGTERM, _sig_handler) == SIG_ERR){
+    fprintf(stderr,"Can't catch SIGTERM...exiting.\n");
+    exit(EXIT_FAILURE);
+  }
+
   // Parse and set command line arguments
-  while ((option_char = getopt(argc, argv, "p:t:c:h")) != -1) {
+  while ((option_char = getopt_long(argc, argv, "p:t:c:h", gLongOptions, NULL)) != -1) {
     switch (option_char) {
       case 'p': // listen-port
         port = atoi(optarg);
         break;
-      case 't': // number of threads
+      case 't': // nthreads
         nthreads = atoi(optarg);
         break;
       case 'c': // file-path
@@ -51,12 +75,14 @@ int main(int argc, char **argv) {
         exit(1);
     }
   }
+
+  /* not useful, but it ensures the initial code builds without warnings */
+  if (nthreads < 1) {
+    nthreads = 1;
+  }
   
   content_init(content);
 
-  threads_requeue_init();
-  threads_init(nthreads);
-  
   /*Initializing server*/
   gfs = gfserver_create();
 
@@ -68,6 +94,4 @@ int main(int argc, char **argv) {
 
   /*Loops forever*/
   gfserver_serve(gfs);
-
-  threads_release();
 }

@@ -172,8 +172,6 @@ int main(int argc, char **argv) {
 
     fprintf(stdout, "Status: %s\n", gfc_strstatus(gfc_get_status(gfr)));
     fprintf(stdout, "Received %zu of %zu bytes\n", gfc_get_bytesreceived(gfr), gfc_get_filelen(gfr));
-
-    gfc_cleanup(gfr);
   }
 
   gfc_global_cleanup();

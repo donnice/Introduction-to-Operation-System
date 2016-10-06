@@ -1,0 +1,76 @@
+CS8803 Course Reading Summaries
+
+Paper #: 18
+Title:  Flash: An efficient and portable Web server
+
+Problems:
+---------
+1) As-symmetric multiprocessor event driven architecture for web server Flash.
+2) Evaluation of server's concurrency architecture and its impact on performance of the system
+3) Flash web server's performance is compared with Apache and Zeus web servers
+
+New Idea and Strengths:
+-----------------------
+1) The authors describe the different architectures for implementing web servers
+Single Process Event Driven [SPED] Architecture : Squid, Zeus
+	a) Single process serves all the requests.
+	b) Uses Non-blocking asynchronous I/O calls [Has to be supported by the Operating System APIs]
+	c) Overlaps CPU, Disk and Network operations associated with serving a request.
+	d) No context switching or thread switching required.
+	e) Helper process can be used to achieve certain tasks
+
+Multiprocessing [MP] Architecture   : Apache in unix
+	a) One server process per connection
+	b) 20-200 processes
+	c) No synchronization required.
+	d) Difficult to implement shared caches based on global data
+
+Multi threading [MT] Architecture   : Apache in Windows NT
+	a) Each thread serves a request/connection
+	b) Synchronization required
+	c) Easy to implement global caches as threads share data structures
+	d) Thread support required from kernel
+	
+AMPED Arch		  : Flash web server
+
+2) Disadvantages in AMPED architectured web servers:
+	Disk operations:
+		a) MP, MT has other threads to execute in case of disk blocks during read/write.
+		b) AMPED incurs extra cost due to communication between server process and helper processes it has.
+		c) Flash showed results equivalent to SPED based web servers at low workloads but at high workloads it was better than MP or MT based web servers
+	Memory requirements:
+		a) SPED : Low memory requirements as only one process and one associated stack
+		b) MT   : Additonal memory for threads and also a few kernel resources both dependent on the number of threads
+	Disk Utilization:
+		a) MP/MT  : One disk request per thread or per process
+		b) SPED   : Only one disk request at a time
+		c) AMPED  : One disk utilization per helper process
+
+3) Advantages of AMPED over MP and MT:
+	Information gathering is easy and straight forward
+	Application level cachine : Single cache unlike in MP and MT where it has multiple process caches and global cache syncronization respectively
+	Long lived connections require less resources to be used up
+
+4) Flash Implementation Details:
+	Server processes and Helper processes are implemented as individual process to maintain portability even in non-thread supported operating systems
+	Caching is applied for File name translations, response headers and file mappings
+	Flash uses Minicore system calls for mmap testing in Flash.
+
+5) Performance Evaluation and Comparison of Flash with other web servers:
+		a) Same Flash server code is built to suit SPED and MP architectures to avoid implementation factors from affecting the test.
+		b) Flash web server was tested along with zeus v1.30 [SPED] and Apache web server for same real world workloads to understand the performance differences
+		c) MT used 64 threads while Apache MP used 32 server processes
+		d) Synthetic work load tests showed that Flash-SPED outperformed Flash-AMPED and also MP and MT implmentations.
+		e) CS Trace Real workload tests by replaying access logs of web server requests showed that Flash-AMPED had higher throughput on these workloads. Apache had lowest 	throughput.
+		f) The performance of all the servers decreased as the data set sizes increased gradually.
+		g) Flash-AMPED had low memory consumption and also less number of context switches compared to other servers so as to produce a high throughput
+		h) Solaris results were 50% lower than results shown by Free BSD os indicating that operating system choice is very important for performance
+		i) Flash-AMPED out performs SPED by 30% and Apache by 50% in performance
+
+Weakness and Extensions:
+------------------------
+1) The results in favour of Flash-AMPED could also be becuase of implementation of Flash-AMPED being better than other Flash architectures in addition to the idea of AMPED design.
+2) Flash-AMPED has a huge advantage of portability by not using threading or multi processing designs but it is widely affected if there is a lot of communication involved between server and helper process since inter-process communications are costlier than thread switching or threads sharing a common data structure.
+3) The idea of using As-symmetic multiprocess event driven design for providing better performance and portability of web servers is encouraging for the web server industry.
+4) As an extension apart from Web-Servers the same idea of AMPED architecture can be applied to various other softwares like FTP Servers, Network File Servers etc to analyse the performance of AMPED based designs in comparison with the traditional MP or MT based implementation.
+5) By performing research mentioned in Point #3 above a general idea about the performance merits and demerits of AMPED based architectures can be clearly understood.
